@@ -51,6 +51,10 @@ def get_crime_data(lat, lng):
         parsed.append(pc)
    
     crime_parsed_df = pd.DataFrame(parsed)
+    # Convert the 'Date' column to datetime format
+    crime_parsed_df['Date'] = pd.to_datetime(crime_parsed_df['Date'], format='%Y %m')
+
+    
     return crime_parsed_df
 
 
@@ -104,7 +108,7 @@ def draw_map(crime_parsed_data):
 
 # Main Section
 if __name__ == "__main__":
-    st.title(f":cop: Postcode Crime")
+    st.title(f":cop: Crime by Postcode")
     postcode = st.text_input("Enter a UK postcode:") # Text input for postcode
 
     if postcode:
@@ -129,9 +133,27 @@ if __name__ == "__main__":
 
 
 
-
+        
             st.title(f'Total Crimes :blue[{total_crimes(crime_parsed_data)}]')
             
+
+            # Calculate the most popular crime and its count based on distinct IDs
+            crime_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique()
+            most_popular_crime = crime_counts.idxmax()
+            count_of_most_popular_crime = crime_counts.max()
+
+            # Calculate the percentage of the most popular crime
+            total_crimes = crime_counts.sum()
+            percent_of_most_popular_crime = (count_of_most_popular_crime / total_crimes) * 100
+
+            # Create the sentence
+            # Extract the minimum and maximum dates
+            min_date = crime_parsed_data['Date'].min()
+            max_date = crime_parsed_data['Date'].max()
+            date_text = f"Time Period :blue[{min_date.strftime('%Y-%m')}] to :blue[{max_date.strftime('%Y-%m')}]"
+            insights_sentence = f"In :blue[{postcode.upper()}], the most reported crime was :blue[{most_popular_crime}] with :blue[{count_of_most_popular_crime}] recorded. That accounts for :blue[{percent_of_most_popular_crime:.2f}%] of all crimes in the area."
+            st.caption(date_text)
+            st.caption(insights_sentence)
 
             fig = px.bar(crime_category_counts_sorted, y='Crime Category', x='Count', text='Count')
             fig.update_traces(textfont_size=13) 
@@ -146,8 +168,8 @@ if __name__ == "__main__":
                 autosize=False
             )
             
-
-            st.plotly_chart(fig, theme="streamlit") # Bar chart
+            config = {'displayModeBar': False}
+            st.plotly_chart(fig, theme="streamlit", config=config) # Bar chart
 
             #create_metric_boxes(category_counts, num_rows, num_columns, clean_category) # Metric Box
 
