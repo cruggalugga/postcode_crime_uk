@@ -5,4 +5,4 @@ pandas
 math
 re
 pydeck
-plotly.express
+plotly
