@@ -5,6 +5,7 @@ import pandas as pd
 import math
 import re
 import pydeck as pdk
+import plotly.express as px
 
 # Use user postcode for API request to return latitude and longitude valuea
 def get_lat_long(postcode):
@@ -71,7 +72,7 @@ def create_metric_boxes(category_counts, num_rows, num_columns, clean_category):
                 columns[j].metric(label=f"{cleaned_category}", value=count)
 
 def total_crimes(crime_parsed_data):
-    crime_count = crime_parsed_data.shape[0]
+    crime_count = crime_parsed_data['ID'].nunique()
     return crime_count
 
 def draw_map(crime_parsed_data):
@@ -115,27 +116,54 @@ if __name__ == "__main__":
 
         if lat and lng:
             crime_parsed_data = get_crime_data(lat, lng)
-
             # Aggregate count of rows for each crime category
             category_counts = crime_parsed_data['Crime Category'].value_counts()
+            #crime_category_counts = crime_parsed_data.groupby('Crime Category').size().reset_index(name='Count')
+            crime_category_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique().reset_index(name='Count')
+            crime_category_counts_sorted = crime_category_counts.sort_values(by='Count', ascending=True)
+
 
             num_categories = len(category_counts)
             num_columns = 4
             num_rows = int(math.ceil(num_categories / num_columns))
 
+
+
+
             st.title(f'Total Crimes :blue[{total_crimes(crime_parsed_data)}]')
-            create_metric_boxes(category_counts, num_rows, num_columns, clean_category)
+            
+
+            fig = px.bar(crime_category_counts_sorted, y='Crime Category', x='Count', text='Count')
+            fig.update_traces(textfont_size=13) 
+            fig.update_layout(
+                xaxis=dict(
+                    title=None,
+                    showticklabels=False  # Remove x-axis tick labels
+                ),
+                yaxis=dict(title=None),
+                #bargap=0.2,         # Adjust the gap between bars within a group
+                #bargroupgap=0.1     # Adjust the gap between groups of bars
+                autosize=False
+            )
+            
+
+            st.plotly_chart(fig, theme="streamlit") # Bar chart
+
+            #create_metric_boxes(category_counts, num_rows, num_columns, clean_category) # Metric Box
 
             st.subheader("Map")
             draw_map(crime_parsed_data) # Function to draw the map
 
             st.subheader("Table") 
             st.write(crime_parsed_data) # Write out the df in a table
+            
+            
+            
+            #st.bar_chart(crime_category_counts_sorted, x="Crime Category", y="Count", color="#ffaa0088")
 
+            
+            
 
+        
+                
            
-
-        
-            
-            
-        
