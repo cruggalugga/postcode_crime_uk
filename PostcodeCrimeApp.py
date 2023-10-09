@@ -165,7 +165,8 @@ if __name__ == "__main__":
                 yaxis=dict(title=None),
                 #bargap=0.2,         # Adjust the gap between bars within a group
                 #bargroupgap=0.1     # Adjust the gap between groups of bars
-                autosize=False
+                autosize=False,
+                dragmode=False
             )
             
             config = {'displayModeBar': False}
