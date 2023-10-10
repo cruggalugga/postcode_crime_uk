@@ -7,7 +7,7 @@ import re
 import pydeck as pdk
 import plotly.express as px
 
-# Use user postcode for API request to return latitude and longitude valuea
+# Take user postcode for API request to return lat, lng
 def get_lat_long(postcode):
     base_url = "https://api.postcodes.io/postcodes/"
     url = base_url + postcode
@@ -44,40 +44,73 @@ def get_crime_data(lat, lng):
     url = f'https://data.police.uk/api/outcomes-at-location?lat={lat}&lng={lng}'
     r = requests.get(url)
     crimes = json.loads(r.content)
-
+    
+    # Empty list
     parsed = []
+    # For each entry parse through the pd.series and then append to the list. 
     for cr in crimes:
         pc = parse_crime_event(cr)
         parsed.append(pc)
    
+    # Convert the list to a DataFrame
     crime_parsed_df = pd.DataFrame(parsed)
     # Convert the 'Date' column to datetime format
     crime_parsed_df['Date'] = pd.to_datetime(crime_parsed_df['Date'], format='%Y %m')
-
-    
     return crime_parsed_df
 
 
 # Clean category text for the KPI box's
 def clean_category(category):
+    # Remove special characters and capitalise
     cleaned_category = re.sub(r'\W+', ' ', category).capitalize()
     return cleaned_category
 
-# function to generate a grid with a KPI for each category count in the data
-def create_metric_boxes(category_counts, num_rows, num_columns, clean_category):
-    for i in range(num_rows):
-        columns = st.columns(num_columns)
-        for j in range(num_columns):
-            index = i * num_columns + j
-            if index < len(category_counts):
-                category = list(category_counts.keys())[index]
-                cleaned_category = clean_category(category)
-                count = category_counts[category]
-                columns[j].metric(label=f"{cleaned_category}", value=count)
 
 def total_crimes(crime_parsed_data):
     crime_count = crime_parsed_data['ID'].nunique()
     return crime_count
+
+def count_crimes_by_category(crime_parsed_data):
+    crime_category_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique().reset_index(name='Count')
+    crimes_by_category = crime_category_counts.sort_values(by='Count', ascending=True)
+    return crimes_by_category
+
+def get_insight_txt(crime_parsed_data):
+    crime_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique()
+    most_popular_crime = crime_counts.idxmax()
+    count_of_most_popular_crime = crime_counts.max()
+
+    # Calculate the percentage of the most popular crime
+    total_crimes = crime_counts.sum()
+    percent_of_most_popular_crime = (count_of_most_popular_crime / total_crimes) * 100
+
+    # Create the sentence
+    # Extract the minimum and maximum dates
+    min_date = crime_parsed_data['Date'].min()
+    max_date = crime_parsed_data['Date'].max()
+    date_text = f"Time Period :blue[{min_date.strftime('%Y-%m')}] to :blue[{max_date.strftime('%Y-%m')}]"
+    insights_sentence = (   f"In :blue[{postcode.upper()}], the crime reported the most is "
+                            f":blue[{most_popular_crime}] with :blue[{count_of_most_popular_crime}] "
+                            f"recorded. That accounts for :blue[{percent_of_most_popular_crime:.2f}%] "
+                            "of all crimes in the area.")
+    return date_text, insights_sentence
+
+
+def draw_bar_chart(crime_parsed_data):
+    crimes_by_cateogry = count_crimes_by_category(crime_parsed_data)
+    fig = px.bar(crimes_by_cateogry, y='Crime Category', x='Count', text='Count')
+    fig.update_traces(textfont_size=13) 
+    fig.update_layout(
+        xaxis=dict(
+            title=None,
+            showticklabels=False  # Remove x-axis tick labels
+        ),
+        yaxis=dict(title=None),
+        autosize=False,
+        dragmode=False
+    )
+    config = {'displayModeBar': False}
+    return fig, config
 
 def draw_map(crime_parsed_data):
     # Calculate the mean latitude and mean longitude
@@ -105,6 +138,24 @@ def draw_map(crime_parsed_data):
     ))
     return built_map
 
+def draw_line_chart(crime_parsed_data):
+    # Calculate the count of unique IDs for each date
+    data = crime_parsed_data.groupby(crime_parsed_data['Date'].dt.strftime('%Y %m'))['ID'].nunique().reset_index(name='Count')
+
+    # Create a DataFrame with all the required dates
+    all_dates = pd.DataFrame({'Date': pd.date_range(start=data['Date'].min(), end=data['Date'].max(), freq='MS')})
+    all_dates['FormattedDate'] = all_dates['Date'].dt.strftime('%Y %m')
+
+    # Merge the actual data with the DataFrame containing all dates
+    merged_data = pd.merge(all_dates, data, left_on='FormattedDate', right_on='Date', how='left').fillna(0)
+
+    # Sort the data by 'Date'
+    merged_data = merged_data.sort_values(by='FormattedDate', ascending=True)
+
+    # Plot the line chart
+    line_chart = st.line_chart(merged_data, x='FormattedDate', y='Count')
+    return merged_data 
+
 
 # Main Section
 if __name__ == "__main__":
@@ -119,70 +170,27 @@ if __name__ == "__main__":
             st.write("Invalid postcode or unable to retrieve location information.")
 
         if lat and lng:
-            crime_parsed_data = get_crime_data(lat, lng)
-            # Aggregate count of rows for each crime category
-            category_counts = crime_parsed_data['Crime Category'].value_counts()
-            #crime_category_counts = crime_parsed_data.groupby('Crime Category').size().reset_index(name='Count')
-            crime_category_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique().reset_index(name='Count')
-            crime_category_counts_sorted = crime_category_counts.sort_values(by='Count', ascending=True)
-
-
-            num_categories = len(category_counts)
-            num_columns = 4
-            num_rows = int(math.ceil(num_categories / num_columns))
-
-
-
-        
+            crime_parsed_data = get_crime_data(lat, lng) # Use returned lat & lng to fetch crime data as a DataFrame
             st.title(f'Total Crimes :blue[{total_crimes(crime_parsed_data)}]')
-            
 
-            # Calculate the most popular crime and its count based on distinct IDs
-            crime_counts = crime_parsed_data.groupby('Crime Category')['ID'].nunique()
-            most_popular_crime = crime_counts.idxmax()
-            count_of_most_popular_crime = crime_counts.max()
-
-            # Calculate the percentage of the most popular crime
-            total_crimes = crime_counts.sum()
-            percent_of_most_popular_crime = (count_of_most_popular_crime / total_crimes) * 100
-
-            # Create the sentence
-            # Extract the minimum and maximum dates
-            min_date = crime_parsed_data['Date'].min()
-            max_date = crime_parsed_data['Date'].max()
-            date_text = f"Time Period :blue[{min_date.strftime('%Y-%m')}] to :blue[{max_date.strftime('%Y-%m')}]"
-            insights_sentence = f"In :blue[{postcode.upper()}], the most reported crime was :blue[{most_popular_crime}] with :blue[{count_of_most_popular_crime}] recorded. That accounts for :blue[{percent_of_most_popular_crime:.2f}%] of all crimes in the area."
+            date_text, insights_sentence = get_insight_txt(crime_parsed_data) # Get insights for display
             st.caption(date_text)
             st.caption(insights_sentence)
 
-            fig = px.bar(crime_category_counts_sorted, y='Crime Category', x='Count', text='Count')
-            fig.update_traces(textfont_size=13) 
-            fig.update_layout(
-                xaxis=dict(
-                    title=None,
-                    showticklabels=False  # Remove x-axis tick labels
-                ),
-                yaxis=dict(title=None),
-                #bargap=0.2,         # Adjust the gap between bars within a group
-                #bargroupgap=0.1     # Adjust the gap between groups of bars
-                autosize=False,
-                dragmode=False
-            )
-            
-            config = {'displayModeBar': False}
-            st.plotly_chart(fig, theme="streamlit", config=config) # Bar chart
+            fig, config =  draw_bar_chart(crime_parsed_data) # Build bar chart by aggregating dataframe
+            st.plotly_chart(fig, theme="streamlit", config=config)
 
-            #create_metric_boxes(category_counts, num_rows, num_columns, clean_category) # Metric Box
+            draw_line_chart(crime_parsed_data)
 
             st.subheader("Map")
             draw_map(crime_parsed_data) # Function to draw the map
 
             st.subheader("Table") 
             st.write(crime_parsed_data) # Write out the df in a table
+
+
+
             
-            
-            
-            #st.bar_chart(crime_category_counts_sorted, x="Crime Category", y="Count", color="#ffaa0088")
 
             
             
